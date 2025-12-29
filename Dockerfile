@@ -23,7 +23,10 @@ RUN npm run production
 # ================================
 # Stage 2: Composer Builder - Install PHP Dependencies
 # ================================
-FROM composer:2 AS composer-builder
+FROM php:8.3-cli-alpine AS composer-builder
+
+# Copy Composer binary from official Composer image
+COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
 
 WORKDIR /app
 
