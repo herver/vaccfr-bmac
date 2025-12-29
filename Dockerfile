@@ -8,8 +8,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install npm dependencies
-RUN npm ci --only=production
+# Install npm all dependencies
+RUN npm ci
 
 # Copy source files needed for asset compilation
 COPY resources ./resources
@@ -18,7 +18,7 @@ COPY webpack.mix.js ./
 COPY .env.example ./.env
 
 # Build production assets
-RUN npm run production
+RUN npm run build
 
 # ================================
 # Stage 2: Composer Builder - Install PHP Dependencies
@@ -53,10 +53,7 @@ COPY composer.json composer.lock ./
 # Install production dependencies
 RUN composer install \
     --no-dev \
-    --optimize-autoloader \
-    --no-scripts \
-    --no-interaction \
-    --prefer-dist
+    --optimize-autoloader
 
 # ================================
 # Stage 3: PHP-FPM Runtime - Final Production Image
