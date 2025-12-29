@@ -30,14 +30,18 @@ COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
 
 # Install required PHP extensions for composer dependencies
 RUN apk add --no-cache \
-    # Build dependencies for gd
+    # Runtime libraries (must persist)
+    libpng \
+    libjpeg-turbo \
+    freetype \
+    oniguruma \
+    libzip \
+    # Build dependencies (will be removed)
     $PHPIZE_DEPS \
     libpng-dev \
     libjpeg-turbo-dev \
     freetype-dev \
-    oniguruma \
     oniguruma-dev \
-    libzip \
     libzip-dev \
     && docker-php-ext-configure gd \
         --with-freetype \
@@ -46,8 +50,8 @@ RUN apk add --no-cache \
         gd \
         pcntl \
         zip \
-    # Clean up build dependencies to reduce layer size
-    && apk del $PHPIZE_DEPS libpng-dev libjpeg-turbo-dev freetype-dev
+    # Clean up ONLY build dependencies, keep runtime libraries
+    && apk del $PHPIZE_DEPS libpng-dev libjpeg-turbo-dev freetype-dev oniguruma-dev libzip-dev
 
 WORKDIR /app
 
