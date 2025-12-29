@@ -28,6 +28,23 @@ FROM php:8.3-cli-alpine AS composer-builder
 # Copy Composer binary from official Composer image
 COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
 
+# Install required PHP extensions for composer dependencies
+RUN apk add --no-cache \
+    # Build dependencies for gd
+    $PHPIZE_DEPS \
+    libpng-dev \
+    libjpeg-turbo-dev \
+    freetype-dev \
+    && docker-php-ext-configure gd \
+        --with-freetype \
+        --with-jpeg \
+    && docker-php-ext-install -j$(nproc) \
+        gd \
+        pcntl \
+        zip \
+    # Clean up build dependencies to reduce layer size
+    && apk del $PHPIZE_DEPS libpng-dev libjpeg-turbo-dev freetype-dev
+
 WORKDIR /app
 
 # Copy composer files
