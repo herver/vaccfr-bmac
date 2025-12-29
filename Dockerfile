@@ -35,6 +35,7 @@ RUN apk add --no-cache \
     libpng-dev \
     libjpeg-turbo-dev \
     freetype-dev \
+    oniguruma \
     && docker-php-ext-configure gd \
         --with-freetype \
         --with-jpeg \
@@ -75,6 +76,7 @@ RUN apk add --no-cache \
     libpng \
     libjpeg-turbo \
     freetype \
+    oniguruma \
     # Build dependencies (will be removed later)
     $PHPIZE_DEPS \
     autoconf \
