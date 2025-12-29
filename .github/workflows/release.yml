@@ -2,12 +2,6 @@ name: Release
 on:
   push:
     branches:
-      - main
-      - next
-      - next-major
-      - beta
-      - alpha
-      - "*.x"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

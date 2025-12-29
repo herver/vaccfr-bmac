@@ -1,0 +1,73 @@
+# Version Control
+.git
+.github
+.gitignore
+.gitattributes
+
+# Development Tools
+.devcontainer
+.vscode
+.idea
+.phpstorm.meta.php
+_ide_helper*.php
+
+# Dependencies (will be installed during build)
+node_modules
+vendor
+
+# Storage directories (should be empty or regenerated)
+storage/app/*
+!storage/app/.gitignore
+!storage/app/public
+storage/framework/cache/*
+!storage/framework/cache/.gitignore
+storage/framework/sessions/*
+!storage/framework/sessions/.gitignore
+storage/framework/views/*
+!storage/framework/views/.gitignore
+storage/logs/*
+!storage/logs/.gitignore
+
+# Build artifacts (will be regenerated)
+public/hot
+public/storage
+public/js
+public/css
+public/mix-manifest.json
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Testing
+tests
+phpunit.xml
+phpunit.xml.bak
+.phpunit.cache
+
+# Documentation
+*.md
+!README.md
+CHANGELOG.md
+
+# Development Docker setup (keep production separate)
+docker-compose.yml
+
+# Code quality tools
+phpstan.neon
+phpstan-baseline.neon
+phpcs.xml
+pint.json
+.styleci.yml
+.bladeignore
+.editorconfig
+.markdownlint.jsonc
+
+# CI/CD (not needed in image)
+.github/workflows
+
+# Misc
+*.log
+.DS_Store
+Thumbs.db
