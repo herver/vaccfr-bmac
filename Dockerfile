@@ -36,6 +36,9 @@ RUN apk add --no-cache \
     libjpeg-turbo-dev \
     freetype-dev \
     oniguruma \
+    oniguruma-dev \
+    libzip \
+    libzip-dev \
     && docker-php-ext-configure gd \
         --with-freetype \
         --with-jpeg \
@@ -86,7 +89,8 @@ RUN apk add --no-cache \
     libpng-dev \
     libjpeg-turbo-dev \
     freetype-dev \
-    icu-dev
+    icu-dev \
+    oniguruma-dev
 
 # Configure and install PHP extensions
 RUN docker-php-ext-configure gd \
@@ -107,7 +111,7 @@ RUN docker-php-ext-configure gd \
     && docker-php-ext-enable redis opcache
 
 # Remove build dependencies to reduce image size
-RUN apk del $PHPIZE_DEPS autoconf g++ make libzip-dev libpng-dev libjpeg-turbo-dev freetype-dev icu-dev \
+RUN apk del $PHPIZE_DEPS autoconf g++ make libzip-dev libpng-dev libjpeg-turbo-dev freetype-dev icu-dev oniguruma-dev \
     && rm -rf /tmp/* /var/cache/apk/*
 
 # Copy OPcache configuration
