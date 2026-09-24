@@ -4,11 +4,11 @@
 #   cd docker && cp .env.example .env   # then edit .env
 #   docker compose up -d
 #
-# MariaDB, Redis and Mailpit are behind compose profiles (db, redis, mail) and
+# PostgreSQL, Redis and Mailpit are behind compose profiles (db, redis, mail) and
 # are enabled through COMPOSE_PROFILES in .env. Remove a profile to use an
 # external service instead and point DB_* / REDIS_* / MAIL_* at it.
 # Each backing service can also be started on its own, e.g.
-#   docker compose up -d mariadb
+#   docker compose up -d postgres
 
 name: ${COMPOSE_PROJECT_NAME:-bmac}
 
@@ -37,7 +37,7 @@ services:
     networks:
       - bmac
     depends_on:
-      mariadb:
+      postgres:
         condition: service_healthy
         required: false
       redis:
@@ -47,27 +47,26 @@ services:
         condition: service_started
         required: false
 
-  mariadb:
-    image: mariadb:11.8
+  postgres:
+    # Major version upgrades need a dump/restore (or pg_upgrade), do not just
+    # bump the tag on an existing volume.
+    image: postgres:18-alpine
     profiles: [db]
     restart: unless-stopped
     environment:
-      MARIADB_DATABASE: ${DB_DATABASE:-bmac}
-      MARIADB_USER: ${DB_USERNAME:-bmac}
-      MARIADB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
-      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD must be set}
-      MARIADB_AUTO_UPGRADE: "1"
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
+      POSTGRES_DB: ${DB_DATABASE:-bmac}
+      POSTGRES_USER: ${DB_USERNAME:-bmac}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     ports:
-      - "${DB_BIND:-127.0.0.1:3306}:3306"
+      - "${DB_BIND:-127.0.0.1:5432}:5432"
     volumes:
-      - mariadb:/var/lib/mysql
+      # PostgreSQL 18+ images keep their data in a versioned subdirectory.
+      - postgres:/var/lib/postgresql
     networks:
       - bmac
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       start_period: 30s
@@ -105,5 +104,5 @@ networks:
 
 volumes:
   storage:
-  mariadb:
+  postgres:
   redis:

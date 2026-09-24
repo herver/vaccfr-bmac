@@ -221,9 +221,9 @@ takes over. Any other command runs as a one-off instead of starting the
 stack, for example `docker compose run --rm app php artisan import:airports`.
 
 Configuration is passed as environment variables; there is no `.env` file in
-the image. `docker/compose.yaml` runs the full stack. MariaDB, Redis and Mailpit
-are optional (compose profiles `db`, `redis` and `mail`), so you can use
-external services instead:
+the image. `docker/compose.yaml` runs the full stack with PostgreSQL 18. The
+bundled PostgreSQL, Redis and Mailpit are optional (compose profiles `db`,
+`redis` and `mail`), so you can use external services instead:
 
 ```bash
 cd docker
@@ -237,7 +237,7 @@ docker compose up -d
 - Remove a profile from `COMPOSE_PROFILES` and point `DB_*`, `REDIS_*` or
   `MAIL_*` at your own service to use it instead of the bundled one. Each
   bundled service can also be started on its own, for example
-  `docker compose up -d mariadb`.
+  `docker compose up -d postgres`.
 - `AUTO_MIGRATE=true` runs the migrations when the container starts.
 - `TRUSTED_PROXIES` (default `private_ranges`) lists the proxies allowed to set
   `X-Forwarded-*` headers. It is also available outside Docker.

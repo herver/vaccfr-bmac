@@ -22,6 +22,7 @@ FROM php:${PHP_VERSION}-fpm-alpine AS php-base
 
 COPY --from=mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
 
+# pdo_pgsql is the primary database driver; pdo_mysql is kept for MySQL/MariaDB.
 RUN set -eux; \
     apk add --no-cache supervisor tini; \
     install-php-extensions \

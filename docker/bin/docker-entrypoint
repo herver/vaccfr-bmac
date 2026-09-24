@@ -44,7 +44,7 @@ wait_for_database() {
     timeout="${DB_WAIT_TIMEOUT:-60}"
     [ "$timeout" -gt 0 ] || return 0
 
-    log "Waiting up to ${timeout}s for the database (${DB_CONNECTION:-mysql} @ ${DB_HOST:-127.0.0.1})..."
+    log "Waiting up to ${timeout}s for the database (${DB_CONNECTION:-pgsql} @ ${DB_HOST:-127.0.0.1}:${DB_PORT:-5432})..."
     deadline=$(($(date +%s) + timeout))
     until php artisan db:show --json >/dev/null 2>&1; do
         if [ "$(date +%s)" -ge "$deadline" ]; then
