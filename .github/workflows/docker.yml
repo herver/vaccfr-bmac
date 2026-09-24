@@ -1,0 +1,177 @@
+name: Docker image
+
+# Builds the production image (Dockerfile), smoke-tests it against PostgreSQL
+# and publishes it to the GitHub Container Registry.
+#
+#   push to vaccfr   -> ghcr.io/<owner>/<repo>:vaccfr, :edge, :sha-<short>
+#   push a tag       -> :<tag>, and for semver tags (v1.2.3) :1.2.3, :1.2, :1, :latest
+#   pull request     -> build + smoke test only, nothing is published
+#
+# Optional repository variables (Settings > Secrets and variables > Actions):
+#   IMAGE_PLATFORMS          e.g. "linux/amd64,linux/arm64" (default linux/amd64)
+#   BOOTSTRAP_COLOR_*        colours compiled into the CSS (see docker/.env.example)
+
+on:
+  push:
+    branches: [vaccfr]
+    tags: ["**"]
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    branches: [vaccfr]
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  # Never cancel a release (tag) build half-way.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PLATFORMS: ${{ vars.IMAGE_PLATFORMS || 'linux/amd64' }}
+
+jobs:
+  build:
+    name: Build, test and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: bmac
+          POSTGRES_USER: bmac
+          POSTGRES_PASSWORD: bmac
+        options: >-
+          --health-cmd "pg_isready -U bmac -d bmac"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        if: contains(env.PLATFORMS, 'arm')
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=auto
+          tags: |
+            type=ref,event=branch
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/vaccfr' }}
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=tag
+            type=ref,event=pr
+
+      - name: Build image for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: bmac:ci
+          build-args: &build-args |
+            BOOTSTRAP_COLOR_PRIMARY=${{ vars.BOOTSTRAP_COLOR_PRIMARY || '#2C3E50' }}
+            BOOTSTRAP_COLOR_SECONDARY=${{ vars.BOOTSTRAP_COLOR_SECONDARY || '#95a5a6' }}
+            BOOTSTRAP_COLOR_TERTIARY=${{ vars.BOOTSTRAP_COLOR_TERTIARY || '#18BC9C' }}
+            BOOTSTRAP_COLOR_SUCCESS=${{ vars.BOOTSTRAP_COLOR_SUCCESS || '#18BC9C' }}
+            BOOTSTRAP_COLOR_DANGER=${{ vars.BOOTSTRAP_COLOR_DANGER || '#E74C3C' }}
+            BOOTSTRAP_COLOR_WARNING=${{ vars.BOOTSTRAP_COLOR_WARNING || '#F39C12' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        env:
+          SERVICE_NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          docker run -d --name bmac \
+            --network "$SERVICE_NETWORK" \
+            -p 127.0.0.1:8080:8080 \
+            -e APP_KEY="base64:$(openssl rand -base64 32)" \
+            -e APP_URL=http://localhost:8080 \
+            -e DB_CONNECTION=pgsql \
+            -e DB_HOST=postgres \
+            -e DB_DATABASE=bmac \
+            -e DB_USERNAME=bmac \
+            -e DB_PASSWORD=bmac \
+            -e AUTO_MIGRATE=true \
+            -e QUEUE_CONNECTION=database \
+            -e CACHE_STORE=file \
+            -e MAIL_MAILER=log \
+            bmac:ci
+
+          status=starting
+          for _ in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' bmac 2>/dev/null || echo exited)
+            [ "$status" = healthy ] || [ "$status" = unhealthy ] || [ "$status" = exited ] && break
+            sleep 3
+          done
+          echo "Container health: $status"
+
+          docker exec bmac supervisorctl status || true
+          if [ "$status" != healthy ]; then
+            docker logs bmac
+            exit 1
+          fi
+
+          curl -fsS -o /dev/null http://127.0.0.1:8080/
+          curl -fsS http://127.0.0.1:8080/api/v1/events
+          echo
+          docker exec bmac php artisan migrate:status | tail -n 3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          build-args: *build-args
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Summary
+        if: github.event_name != 'pull_request'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "### Published image"
+            echo
+            echo '```'
+            echo "$TAGS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

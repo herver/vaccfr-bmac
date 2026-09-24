@@ -244,6 +244,10 @@ docker compose up -d
 - The `BOOTSTRAP_COLOR_*` values are compiled into the CSS, so they are build
   arguments. Rebuild the image after changing them.
 - `storage/` should be a persistent volume.
+- The `Docker image` workflow publishes the image to
+  `ghcr.io/herver/vaccfr-bmac`: `vaccfr` / `edge` for the `vaccfr` branch, and
+  the tag name (plus `1.2.3`, `1.2`, `1` and `latest` for semver tags) for git
+  tags. Set `BMAC_IMAGE` in `docker/.env` to use it instead of building locally.
 
 ## API
 
