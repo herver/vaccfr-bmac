@@ -1,0 +1,150 @@
+#!/bin/sh
+#
+# BMAC container entrypoint.
+#
+# Usage: docker-entrypoint [web|queue|scheduler|<command> ...]
+#   web        Caddy + php-fpm (default)
+#   queue      Horizon when QUEUE_CONNECTION=redis, queue:work otherwise
+#   scheduler  Laravel task scheduler (replaces the cron entry)
+#   anything else is executed as-is, e.g. "php artisan migrate --force"
+set -eu
+
+APP_DIR=/var/www/html
+cd "$APP_DIR"
+
+log() { printf '[entrypoint] %s\n' "$*" >&2; }
+
+is_true() {
+    case "$1" in
+        1 | [Tt][Rr][Uu][Ee] | [Yy][Ee][Ss] | [Oo][Nn]) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+prepare_storage() {
+    # The storage directory is usually a (possibly empty) volume.
+    mkdir -p \
+        storage/app/public \
+        storage/framework/cache/data \
+        storage/framework/sessions \
+        storage/framework/views \
+        storage/logs
+}
+
+require_app_key() {
+    if [ -z "${APP_KEY:-}" ]; then
+        log "APP_KEY is not set. Generate one with:"
+        log "  docker run --rm <image> php artisan key:generate --show"
+        exit 1
+    fi
+}
+
+wait_for_database() {
+    timeout="${DB_WAIT_TIMEOUT:-60}"
+    [ "$timeout" -gt 0 ] || return 0
+
+    log "Waiting up to ${timeout}s for the database (${DB_CONNECTION:-mysql} @ ${DB_HOST:-127.0.0.1})..."
+    deadline=$(($(date +%s) + timeout))
+    until php artisan db:show --json >/dev/null 2>&1; do
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            log "Database is not reachable, last error:"
+            php artisan db:show --json >&2 || true
+            exit 1
+        fi
+        sleep 2
+    done
+}
+
+configure_trusted_proxies() {
+    # The container always runs behind Caddy and, usually, a TLS terminating
+    # reverse proxy on a private network: trust private ranges by default.
+    # Laravel (config/trustedproxy.php) takes a comma separated list, Caddy a
+    # space separated one; both understand "private_ranges".
+    TRUSTED_PROXIES="${TRUSTED_PROXIES:-private_ranges}"
+    case "$TRUSTED_PROXIES" in
+        '*' | '**') CADDY_TRUSTED_PROXIES="0.0.0.0/0 ::/0" ;;
+        *) CADDY_TRUSTED_PROXIES=$(printf '%s' "$TRUSTED_PROXIES" | tr ',' ' ') ;;
+    esac
+    export TRUSTED_PROXIES CADDY_TRUSTED_PROXIES
+}
+
+optimize() {
+    # Configuration comes from the runtime environment, so caches must be
+    # built when the container starts rather than at image build time.
+    php artisan config:cache --no-interaction >/dev/null
+    php artisan route:cache --no-interaction >/dev/null
+    php artisan event:cache --no-interaction >/dev/null
+}
+
+run_web() {
+    php artisan view:cache --no-interaction >/dev/null
+
+    if is_true "${AUTO_MIGRATE:-false}"; then
+        log "Running database migrations..."
+        php artisan migrate --force --no-interaction
+    fi
+
+    log "Starting php-fpm and Caddy on port ${CADDY_PORT:-8080}"
+
+    php-fpm --nodaemonize --force-stderr &
+    fpm_pid=$!
+    caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &
+    caddy_pid=$!
+
+    trap 'stop_web; exit 0' TERM INT QUIT
+
+    # If either process exits, stop the other one and let the orchestrator
+    # restart the container.
+    status=0
+    wait -n || status=$?
+    log "A child process exited (status ${status}), stopping container"
+    stop_web
+    exit "$status"
+}
+
+stop_web() {
+    log "Stopping Caddy and php-fpm..."
+    kill -TERM "$caddy_pid" 2>/dev/null || true
+    kill -QUIT "$fpm_pid" 2>/dev/null || true
+    wait 2>/dev/null || true
+}
+
+role="${1:-web}"
+
+case "$role" in
+    web | queue | scheduler)
+        echo "$role" >/tmp/container-role
+        prepare_storage
+        require_app_key
+        configure_trusted_proxies
+        wait_for_database
+        optimize
+        ;;
+esac
+
+case "$role" in
+    web)
+        run_web
+        ;;
+    queue)
+        case "${QUEUE_CONNECTION:-sync}" in
+            redis)
+                log "Starting Horizon"
+                exec php artisan horizon
+                ;;
+            sync)
+                log "QUEUE_CONNECTION=sync runs jobs inline, no worker needed; idling"
+                exec tail -f /dev/null
+                ;;
+        esac
+        log "Starting queue worker on connection '${QUEUE_CONNECTION}'"
+        exec php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+        ;;
+    scheduler)
+        log "Starting scheduler"
+        exec php artisan schedule:work
+        ;;
+    *)
+        exec "$@"
+        ;;
+esac

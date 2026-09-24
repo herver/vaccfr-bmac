@@ -200,6 +200,44 @@ run the following command:
     > Any airport referenced by a flight import that is missing from the
     > database is added automatically from the same source.
 
+## Docker
+
+The `Dockerfile` builds a production image running Caddy and php-fpm, listening
+on plain HTTP port `8080`. TLS is expected to be terminated by a reverse proxy
+in front of it. The same image also runs the queue worker and the scheduler:
+
+| Command     | Purpose                                                              |
+| ----------- | -------------------------------------------------------------------- |
+| `web`       | Caddy + php-fpm (default)                                            |
+| `queue`     | Horizon when `QUEUE_CONNECTION=redis`, `queue:work` otherwise        |
+| `scheduler` | `php artisan schedule:work` (replaces the cron entry)                |
+| anything    | Runs as-is, e.g. `php artisan import:airports`                       |
+
+Configuration is passed as environment variables; there is no `.env` file in
+the image. `docker/compose.yaml` runs the full stack. MariaDB, Redis and Mailpit
+are optional (compose profiles `db`, `redis` and `mail`), so you can use
+external services instead:
+
+```bash
+cd docker
+cp .env.example .env
+docker compose build
+# Generate APP_KEY and paste it into docker/.env
+docker compose run --rm --no-deps app php artisan key:generate --show
+docker compose up -d
+```
+
+- Remove a profile from `COMPOSE_PROFILES` and point `DB_*`, `REDIS_*` or
+  `MAIL_*` at your own service to use it instead of the bundled one. Each
+  bundled service can also be started on its own, for example
+  `docker compose up -d mariadb`.
+- `AUTO_MIGRATE=true` runs the migrations when the `web` container starts.
+- `TRUSTED_PROXIES` (default `private_ranges`) lists the proxies allowed to set
+  `X-Forwarded-*` headers. It is also available outside Docker.
+- The `BOOTSTRAP_COLOR_*` values are compiled into the CSS, so they are build
+  arguments. Rebuild the image after changing them.
+- `storage/` should be a persistent volume.
+
 ## API
 
 BMAC exposes a read-only JSON API. All endpoints are public and require no authentication.

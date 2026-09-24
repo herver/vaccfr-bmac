@@ -1,0 +1,47 @@
+# VCS / tooling
+.git
+.github
+.agents
+.claude
+.codex
+.devcontainer
+.idea
+.vscode
+*.md
+!README.md
+
+# Local environment (configuration is injected at runtime)
+.env
+.env.*
+docker/.env
+
+# Dependencies and build output are produced inside the image
+node_modules
+vendor
+public/build
+public/hot
+public/storage
+
+# Runtime state
+bootstrap/cache/*.php
+storage/app/*
+!storage/app/public
+storage/app/public/*
+storage/debugbar/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/testing/*
+storage/framework/views/*
+storage/logs/*
+!storage/**/.gitignore
+
+# Tests and dev-only files
+tests
+phpunit.xml*
+.phpunit*
+phpstan*
+rector.php
+_ide_helper*.php
+.phpstorm.meta.php
+docker-compose.yml
+docker/compose.yaml

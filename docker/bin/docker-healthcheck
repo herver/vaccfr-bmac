@@ -1,0 +1,7 @@
+#!/bin/sh
+# Only the web role serves HTTP; other roles are considered healthy while running.
+role=$(cat /tmp/container-role 2>/dev/null || echo web)
+if [ "$role" = "web" ]; then
+    exec wget -q -T 5 -O /dev/null "http://127.0.0.1:${CADDY_PORT:-8080}/up"
+fi
+exit 0

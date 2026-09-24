@@ -1,0 +1,62 @@
+# Caddy configuration for BMAC.
+#
+# TLS is intentionally disabled: the container is meant to sit behind a
+# reverse proxy that terminates TLS and forwards plain HTTP to port 8080.
+{
+	admin off
+	auto_https off
+	persist_config off
+
+	servers {
+		# Only honour X-Forwarded-* headers coming from these networks
+		# (set via the TRUSTED_PROXIES environment variable).
+		trusted_proxies static {$CADDY_TRUSTED_PROXIES:private_ranges}
+		client_ip_headers X-Forwarded-For X-Real-IP
+	}
+
+	log {
+		output stderr
+		format {$CADDY_LOG_FORMAT:json}
+		level {$CADDY_LOG_LEVEL:INFO}
+	}
+}
+
+:{$CADDY_PORT:8080} {
+	root * /var/www/html/public
+
+	log {
+		output stdout
+		format {$CADDY_LOG_FORMAT:json}
+	}
+
+	@health path /up
+	log_skip @health
+
+	encode zstd gzip
+
+	header {
+		-Server
+		-Via
+		-X-Powered-By
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Vite assets are fingerprinted, cache them aggressively.
+	@build path /build/*
+	header @build Cache-Control "public, max-age=31536000, immutable"
+
+	# Never serve dotfiles (except ACME / well-known resources).
+	@dotfiles {
+		path */.*
+		not path /.well-known/*
+	}
+	respond @dotfiles 404
+
+	php_fastcgi 127.0.0.1:9000 {
+		# The upstream reverse proxy may take a while for large imports.
+		read_timeout {$CADDY_FASTCGI_READ_TIMEOUT:120s}
+	}
+
+	file_server
+}
