@@ -15,6 +15,11 @@ declare(strict_types=1);
 return [
 
     /*
+     * The OAuth provider implementation: "vatsim" (VATSIM Connect) or "keycloak"
+     */
+    'provider' => env('OAUTH_PROVIDER', 'vatsim'),
+
+    /*
      * The location of the OAuth interface
      */
     'base' => env('OAUTH_BASE', 'https://auth.vatsim.net'),

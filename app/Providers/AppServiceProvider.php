@@ -16,6 +16,7 @@ use App\Policies\AirportPolicy;
 use App\Policies\BookingPolicy;
 use App\Policies\EventPolicy;
 use App\Policies\FaqPolicy;
+use App\Services\OAuth\KeycloakProvider;
 use App\Services\OAuth\VatsimProvider;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -34,7 +35,9 @@ class AppServiceProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
-        $this->app->bind(VatsimProvider::class, fn (): VatsimProvider => new VatsimProvider());
+        $this->app->bind(VatsimProvider::class, fn (): VatsimProvider => config('oauth.provider') === 'keycloak'
+            ? new KeycloakProvider()
+            : new VatsimProvider());
     }
 
     /**
