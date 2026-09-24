@@ -1,5 +1,5 @@
-# BMAC stack: application (Caddy + php-fpm), queue worker, scheduler and
-# optional backing services.
+# BMAC stack: a single application container (Caddy, php-fpm, queue worker
+# and scheduler under supervisord) plus optional backing services.
 #
 #   cd docker && cp .env.example .env   # then edit .env
 #   docker compose up -d
@@ -12,18 +12,10 @@
 
 name: ${COMPOSE_PROJECT_NAME:-bmac}
 
-x-app: &app
-  image: ${BMAC_IMAGE:-bmac:latest}
-  env_file: .env
-  restart: unless-stopped
-  volumes:
-    - storage:/var/www/html/storage
-  networks:
-    - bmac
-
 services:
+  # Caddy + php-fpm + queue worker + scheduler, supervised by supervisord.
   app:
-    <<: *app
+    image: ${BMAC_IMAGE:-bmac:latest}
     build:
       context: ..
       dockerfile: Dockerfile
@@ -34,10 +26,16 @@ services:
         BOOTSTRAP_COLOR_SUCCESS: ${BOOTSTRAP_COLOR_SUCCESS:-#18BC9C}
         BOOTSTRAP_COLOR_DANGER: ${BOOTSTRAP_COLOR_DANGER:-#E74C3C}
         BOOTSTRAP_COLOR_WARNING: ${BOOTSTRAP_COLOR_WARNING:-#F39C12}
+    env_file: .env
+    restart: unless-stopped
+    # Leave time for running queue jobs to finish (QUEUE_STOP_WAIT).
+    stop_grace_period: 90s
     ports:
       - "${APP_BIND:-127.0.0.1:8080}:8080"
-    environment:
-      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
+    volumes:
+      - storage:/var/www/html/storage
+    networks:
+      - bmac
     depends_on:
       mariadb:
         condition: service_healthy
@@ -48,25 +46,6 @@ services:
       mailpit:
         condition: service_started
         required: false
-
-  queue:
-    <<: *app
-    # Same image as "app" (built or pulled by that service).
-    pull_policy: never
-    command: ["queue"]
-    stop_grace_period: 60s
-    depends_on:
-      app:
-        condition: service_healthy
-
-  scheduler:
-    <<: *app
-    # Same image as "app" (built or pulled by that service).
-    pull_policy: never
-    command: ["scheduler"]
-    depends_on:
-      app:
-        condition: service_healthy
 
   mariadb:
     image: mariadb:11.8

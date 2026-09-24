@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1.7
 #
-# Production image for BMAC: Caddy (plain HTTP on :8080) + php-fpm.
+# Production image for BMAC: a single container running Caddy (plain HTTP on
+# :8080), php-fpm, the queue worker and the scheduler under supervisord.
 # TLS is expected to be terminated by an upstream reverse proxy.
 #
-# The same image also runs the queue worker and scheduler, see
-# docker/bin/docker-entrypoint and docker/compose.yaml.
+# See docker/bin/docker-entrypoint and docker/supervisor/supervisord.conf.
 
 ARG PHP_VERSION=8.5
 ARG NODE_VERSION=22
@@ -23,7 +23,7 @@ FROM php:${PHP_VERSION}-fpm-alpine AS php-base
 COPY --from=mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
 
 RUN set -eux; \
-    apk add --no-cache tini; \
+    apk add --no-cache supervisor tini; \
     install-php-extensions \
         bcmath \
         exif \
@@ -118,6 +118,10 @@ ENV APP_ENV=production \
     LOG_CHANNEL=stderr \
     LOG_LEVEL=info \
     CADDY_PORT=8080 \
+    QUEUE_ENABLED=true \
+    QUEUE_STOP_WAIT=60 \
+    SCHEDULER_ENABLED=true \
+    SUPERVISOR_LOG_LEVEL=info \
     XDG_CONFIG_HOME=/tmp/caddy/config \
     XDG_DATA_HOME=/tmp/caddy/data \
     PHP_MEMORY_LIMIT=256M \
@@ -138,6 +142,7 @@ COPY --from=caddy /usr/bin/caddy /usr/local/bin/caddy
 COPY docker/caddy/Caddyfile /etc/caddy/Caddyfile
 COPY docker/php/php.ini /usr/local/etc/php/conf.d/zz-bmac.ini
 COPY docker/php/php-fpm.conf /usr/local/etc/php-fpm.d/zz-docker.conf
+COPY docker/supervisor/supervisord.conf /etc/supervisord.conf
 COPY docker/bin/ /usr/local/bin/
 
 WORKDIR /var/www/html
@@ -158,8 +163,8 @@ USER www-data
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD ["docker-healthcheck"]
 
 ENTRYPOINT ["/sbin/tini", "--", "docker-entrypoint"]
-CMD ["web"]
+CMD ["supervisord"]

@@ -1,0 +1,16 @@
+#!/bin/sh
+# Queue worker started by supervisord.
+set -eu
+cd /var/www/html
+
+case "${QUEUE_CONNECTION:-sync}" in
+    redis)
+        exec php artisan horizon
+        ;;
+    sync)
+        echo "[queue] QUEUE_CONNECTION=sync runs jobs inline, no worker needed; idling" >&2
+        exec tail -f /dev/null
+        ;;
+esac
+
+exec php artisan queue:work --sleep=3 --tries=3 --max-time=3600

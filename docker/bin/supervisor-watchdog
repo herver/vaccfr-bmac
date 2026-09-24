@@ -1,0 +1,17 @@
+#!/bin/sh
+# supervisord event listener: shuts supervisord down when a program enters the
+# FATAL state (it could not be (re)started), which stops the container.
+# Protocol: https://supervisord.org/events.html#event-listener-notification-protocol
+set -u
+
+while :; do
+    printf 'READY\n'
+    read -r header || exit 0
+    len=$(printf '%s\n' "$header" | sed -n 's/.*len:\([0-9]*\).*/\1/p')
+    payload=$(head -c "${len:-0}")
+    printf 'RESULT 2\nOK'
+
+    printf '[watchdog] program entered FATAL state (%s), stopping supervisord\n' "$payload" >&2
+    printf '%s\n' "$payload" > /tmp/supervisor-fatal
+    kill -TERM "$(cat /tmp/supervisord.pid)"
+done

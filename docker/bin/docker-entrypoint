@@ -2,10 +2,11 @@
 #
 # BMAC container entrypoint.
 #
-# Usage: docker-entrypoint [web|queue|scheduler|<command> ...]
-#   web        Caddy + php-fpm (default)
-#   queue      Horizon when QUEUE_CONNECTION=redis, queue:work otherwise
-#   scheduler  Laravel task scheduler (replaces the cron entry)
+# Usage: docker-entrypoint [supervisord | <command> ...]
+#   supervisord  (default) prepares the application, then runs Caddy, php-fpm,
+#                the queue worker and the scheduler under supervisord.
+#                QUEUE_ENABLED / SCHEDULER_ENABLED (default true) toggle the
+#                last two.
 #   anything else is executed as-is, e.g. "php artisan migrate --force"
 set -eu
 
@@ -76,7 +77,12 @@ optimize() {
     php artisan event:cache --no-interaction >/dev/null
 }
 
-run_web() {
+if [ "$#" -eq 0 ] || [ "$1" = "supervisord" ]; then
+    prepare_storage
+    require_app_key
+    configure_trusted_proxies
+    wait_for_database
+    optimize
     php artisan view:cache --no-interaction >/dev/null
 
     if is_true "${AUTO_MIGRATE:-false}"; then
@@ -84,67 +90,30 @@ run_web() {
         php artisan migrate --force --no-interaction
     fi
 
-    log "Starting php-fpm and Caddy on port ${CADDY_PORT:-8080}"
+    QUEUE_ENABLED=$(is_true "${QUEUE_ENABLED:-true}" && echo true || echo false)
+    SCHEDULER_ENABLED=$(is_true "${SCHEDULER_ENABLED:-true}" && echo true || echo false)
+    export QUEUE_ENABLED SCHEDULER_ENABLED
 
-    php-fpm --nodaemonize --force-stderr &
-    fpm_pid=$!
-    caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &
-    caddy_pid=$!
+    log "Starting supervisord (web on port ${CADDY_PORT:-8080}, queue: ${QUEUE_ENABLED}, scheduler: ${SCHEDULER_ENABLED})"
+    rm -f /tmp/supervisor-fatal
+    supervisord --configuration /etc/supervisord.conf &
+    supervisord_pid=$!
+    # Forward stop signals so supervisord shuts the programs down in order.
+    trap 'kill -TERM "$supervisord_pid" 2>/dev/null' TERM INT QUIT
 
-    trap 'stop_web; exit 0' TERM INT QUIT
-
-    # If either process exits, stop the other one and let the orchestrator
-    # restart the container.
     status=0
-    wait -n || status=$?
-    log "A child process exited (status ${status}), stopping container"
-    stop_web
+    while :; do
+        wait "$supervisord_pid" && status=0 || status=$?
+        kill -0 "$supervisord_pid" 2>/dev/null || break
+    done
+
+    # The watchdog stopped supervisord because a program kept crashing: exit
+    # non-zero so restart policies / orchestrators treat it as a failure.
+    if [ -f /tmp/supervisor-fatal ]; then
+        log "Stopped after a supervised program failed permanently"
+        exit 1
+    fi
     exit "$status"
-}
+fi
 
-stop_web() {
-    log "Stopping Caddy and php-fpm..."
-    kill -TERM "$caddy_pid" 2>/dev/null || true
-    kill -QUIT "$fpm_pid" 2>/dev/null || true
-    wait 2>/dev/null || true
-}
-
-role="${1:-web}"
-
-case "$role" in
-    web | queue | scheduler)
-        echo "$role" >/tmp/container-role
-        prepare_storage
-        require_app_key
-        configure_trusted_proxies
-        wait_for_database
-        optimize
-        ;;
-esac
-
-case "$role" in
-    web)
-        run_web
-        ;;
-    queue)
-        case "${QUEUE_CONNECTION:-sync}" in
-            redis)
-                log "Starting Horizon"
-                exec php artisan horizon
-                ;;
-            sync)
-                log "QUEUE_CONNECTION=sync runs jobs inline, no worker needed; idling"
-                exec tail -f /dev/null
-                ;;
-        esac
-        log "Starting queue worker on connection '${QUEUE_CONNECTION}'"
-        exec php artisan queue:work --sleep=3 --tries=3 --max-time=3600
-        ;;
-    scheduler)
-        log "Starting scheduler"
-        exec php artisan schedule:work
-        ;;
-    *)
-        exec "$@"
-        ;;
-esac
+exec "$@"

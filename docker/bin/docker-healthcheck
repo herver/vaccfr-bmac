@@ -1,7 +1,10 @@
 #!/bin/sh
-# Only the web role serves HTTP; other roles are considered healthy while running.
-role=$(cat /tmp/container-role 2>/dev/null || echo web)
-if [ "$role" = "web" ]; then
-    exec wget -q -T 5 -O /dev/null "http://127.0.0.1:${CADDY_PORT:-8080}/up"
+# Healthy when the application answers on /up and no supervised program is
+# crashing (disabled programs stay STOPPED and are ignored).
+set -eu
+
+wget -q -T 5 -O /dev/null "http://127.0.0.1:${CADDY_PORT:-8080}/up"
+
+if supervisorctl status | grep -vE '\b(RUNNING|STOPPED)\b' >&2; then
+    exit 1
 fi
-exit 0

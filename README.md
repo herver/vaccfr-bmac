@@ -202,16 +202,23 @@ run the following command:
 
 ## Docker
 
-The `Dockerfile` builds a production image running Caddy and php-fpm, listening
-on plain HTTP port `8080`. TLS is expected to be terminated by a reverse proxy
-in front of it. The same image also runs the queue worker and the scheduler:
+The `Dockerfile` builds a single production image. Everything runs in one
+container under [supervisord](https://supervisord.org), as the unprivileged
+`www-data` user:
 
-| Command     | Purpose                                                              |
-| ----------- | -------------------------------------------------------------------- |
-| `web`       | Caddy + php-fpm (default)                                            |
-| `queue`     | Horizon when `QUEUE_CONNECTION=redis`, `queue:work` otherwise        |
-| `scheduler` | `php artisan schedule:work` (replaces the cron entry)                |
-| anything    | Runs as-is, e.g. `php artisan import:airports`                       |
+| Program     | Purpose                                                            |
+| ----------- | ------------------------------------------------------------------ |
+| `caddy`     | Web server on plain HTTP port `8080`                               |
+| `php-fpm`   | PHP FastCGI process manager                                        |
+| `queue`     | Horizon when `QUEUE_CONNECTION=redis`, `queue:work` otherwise      |
+| `scheduler` | `php artisan schedule:work` (replaces the cron entry)              |
+
+TLS is expected to be terminated by a reverse proxy in front of the container.
+Set `QUEUE_ENABLED=false` or `SCHEDULER_ENABLED=false` to leave out the queue
+worker or the scheduler. A crashed program is restarted automatically. If one
+keeps failing, the container exits with status 1 so Docker's restart policy
+takes over. Any other command runs as a one-off instead of starting the
+stack, for example `docker compose run --rm app php artisan import:airports`.
 
 Configuration is passed as environment variables; there is no `.env` file in
 the image. `docker/compose.yaml` runs the full stack. MariaDB, Redis and Mailpit
@@ -231,7 +238,7 @@ docker compose up -d
   `MAIL_*` at your own service to use it instead of the bundled one. Each
   bundled service can also be started on its own, for example
   `docker compose up -d mariadb`.
-- `AUTO_MIGRATE=true` runs the migrations when the `web` container starts.
+- `AUTO_MIGRATE=true` runs the migrations when the container starts.
 - `TRUSTED_PROXIES` (default `private_ranges`) lists the proxies allowed to set
   `X-Forwarded-*` headers. It is also available outside Docker.
 - The `BOOTSTRAP_COLOR_*` values are compiled into the CSS, so they are build
